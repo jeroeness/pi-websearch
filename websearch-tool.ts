@@ -10,8 +10,6 @@
  *   Links: [{"title":"…","url":"…"}, …]
  *
  *   <snippet commentary>
- *
- *   REMINDER: You MUST include the sources above …
  */
 
 import { Type } from "@earendil-works/pi-ai";
@@ -91,8 +89,6 @@ function formatOutput(
       out += "No links found.\n\n";
     }
   }
-  out +=
-    "\nREMINDER: You MUST include the sources above in your response to the user using markdown hyperlinks.";
   return out.trim();
 }
 

@@ -25,35 +25,38 @@ import { WebFetchTool } from "./webfetch-tool.ts";
 import { WebSearchTool } from "./websearch-tool.ts";
 
 export default function (pi: ExtensionAPI) {
-	pi.registerTool(WebSearchTool);
-	pi.registerTool(WebFetchTool);
+  pi.registerTool(WebSearchTool);
+  pi.registerTool(WebFetchTool);
 
-	// Hostnames the user approved for WebFetch during this session.
-	const allowedHosts = new Set<string>();
-	pi.on("session_start", () => {
-		allowedHosts.clear();
-	});
+  // Hostnames the user approved for WebFetch during this session.
+  const allowedHosts = new Set<string>();
+  pi.on("session_start", () => {
+    allowedHosts.clear();
+  });
 
-	pi.on("tool_call", async (event, ctx) => {
-		if (event.toolName !== WEB_FETCH_TOOL_NAME) return;
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName !== WEB_FETCH_TOOL_NAME) return;
 
-		const raw = (event.input as { url?: string }).url;
-		if (!raw) return; // invalid input is reported by the tool's own validation
+    const raw = (event.input as { url?: string }).url;
+    if (!raw) return; // invalid input is reported by the tool's own validation
 
-		let host: string;
-		try {
-			const parsed = new URL(raw);
-			host = parsed.hostname;
-			if (isPreapprovedHost(parsed.hostname, parsed.pathname)) return; // auto-allow docs/code domains
-		} catch {
-			return; // let the tool surface the parse error
-		}
+    let host: string;
+    try {
+      const parsed = new URL(raw);
+      host = parsed.hostname;
+      if (isPreapprovedHost(parsed.hostname, parsed.pathname)) return; // auto-allow docs/code domains
+    } catch {
+      return; // let the tool surface the parse error
+    }
 
-		if (allowedHosts.has(host)) return;
-		if (!ctx.hasUI) return; // headless: nobody to ask, allow through
+    if (allowedHosts.has(host)) return;
+    if (!ctx.hasUI) return; // headless: nobody to ask, allow through
 
-		const ok = await ctx.ui.confirm("Allow WebFetch?", `Fetch content from ${host}?`);
-		if (!ok) return { block: true, reason: `WebFetch denied for ${host}` };
-		allowedHosts.add(host);
-	});
+    const ok = await ctx.ui.confirm(
+      "Allow WebFetch?",
+      `Fetch content from ${host}?`,
+    );
+    if (!ok) return { block: true, reason: `WebFetch denied for ${host}` };
+    allowedHosts.add(host);
+  });
 }
