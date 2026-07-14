@@ -1,0 +1,43 @@
+{
+	"name": "pi-websearch",
+	"version": "0.1.0",
+	"description": "Local WebSearch (ddgr) and WebFetch (Playwright/w3m + small-model) tools for the pi coding agent.",
+	"type": "module",
+	"license": "MIT",
+	"author": "Jeroen Esseveld",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jeroeness/pi-websearch.git"
+	},
+	"keywords": [
+		"pi",
+		"pi-coding-agent",
+		"extension",
+		"websearch",
+		"webfetch",
+		"ddgr",
+		"playwright",
+		"w3m"
+	],
+	"pi": {
+		"extensions": ["./index.ts"]
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"lru-cache": "^11.5.2",
+		"turndown": "^7.2.4"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-ai": "^0.80.7",
+		"@earendil-works/pi-coding-agent": "^0.80.7",
+		"@earendil-works/pi-tui": "^0.80.7",
+		"@types/node": "^22.19.19",
+		"@types/turndown": "^5.0.5",
+		"typescript": "^5.9.3"
+	}
+}
