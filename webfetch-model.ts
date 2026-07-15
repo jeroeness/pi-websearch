@@ -1,33 +1,17 @@
 /**
  * WebFetch secondary-model step.
  *
- * Applies the caller's prompt to the fetched content using a small, fast model
- * (default `anthropic/claude-haiku-4-5`, override with PI_WEBFETCH_MODEL as
- * `provider/id`). Falls back to the current session model, then to returning
- * the truncated content directly when no model/API key is available.
+ * Applies the caller's prompt to the fetched content using the model configured
+ * in PI_WEBFETCH_MODEL (see model-config.ts — chosen by the agent from the
+ * available models). Falls back to the current session model, then to returning
+ * the truncated content directly when no model / API key is available.
  */
 
-import { complete, getModel } from "@earendil-works/pi-ai/compat";
+import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveConfiguredModel } from "./model-config.ts";
 import { makeSecondaryModelPrompt } from "./webfetch-prompt.ts";
 import { MAX_MARKDOWN_LENGTH } from "./webfetch-utils.ts";
-
-const DEFAULT_PROVIDER = "anthropic";
-const DEFAULT_MODEL_ID = "claude-haiku-4-5";
-
-// getModel's model-id parameter is typed per-provider; we resolve from runtime
-// strings (env / defaults), so use a loosened view of the same function.
-const lookupModel = getModel as (provider: string, id: string) => ReturnType<typeof getModel>;
-
-function resolveModel(ctx: ExtensionContext) {
-	const configured = process.env.PI_WEBFETCH_MODEL;
-	if (configured?.includes("/")) {
-		const [provider, ...rest] = configured.split("/");
-		const model = lookupModel(provider, rest.join("/"));
-		if (model) return model;
-	}
-	return lookupModel(DEFAULT_PROVIDER, DEFAULT_MODEL_ID) ?? ctx.model;
-}
 
 export async function applyPromptToMarkdown(
 	ctx: ExtensionContext,
@@ -41,8 +25,9 @@ export async function applyPromptToMarkdown(
 			? `${markdownContent.slice(0, MAX_MARKDOWN_LENGTH)}\n\n[Content truncated due to length...]`
 			: markdownContent;
 
-	const model = resolveModel(ctx);
-	// Graceful degradation: with no usable model, return the content directly.
+	// Normally guaranteed valid by the tool_call gate; fall back to the session
+	// model, then to the raw content, so WebFetch degrades gracefully.
+	const model = resolveConfiguredModel(ctx.modelRegistry) ?? ctx.model;
 	if (!model) return truncated;
 
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);

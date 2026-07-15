@@ -39,8 +39,6 @@ Web search results for query: "<query>"
 Links: [{"title":"…","url":"…"}, …]
 
 <snippet commentary>
-
-REMINDER: You MUST include the sources above in your response …
 ```
 
 ### `WebFetch`
@@ -54,12 +52,23 @@ string. Cross-host redirects are surfaced (not silently followed) as a
 eligible for a raw-markdown passthrough fast path; any other hostname is asked once per
 session before the first fetch.
 
+### `set_webfetch_model`
+Sets the model WebFetch uses for its summarization step (`PI_WEBFETCH_MODEL`) and persists
+it to `~/.pi/agent/pi-websearch.json` for future sessions.
+
+**Model selection.** WebFetch needs a small, fast model. If `PI_WEBFETCH_MODEL` is unset —
+or names a model that isn't currently available — the first WebFetch call is blocked with
+the list of available models (what `pi --list-models` shows) and an instruction for the
+agent to judge the lightest-class one (Haiku / mini / flash / small class) and call
+`set_webfetch_model`. The choice persists across sessions, so this happens at most once per
+machine. Setting `PI_WEBFETCH_MODEL` explicitly skips the prompt.
+
 ## Configuration (environment)
 
 | Variable | Values | Default |
 |---|---|---|
 | `PI_WEBFETCH_BACKEND` | `playwright` \| `w3m` | `playwright` |
-| `PI_WEBFETCH_MODEL` | `provider/id` | `anthropic/claude-haiku-4-5` |
+| `PI_WEBFETCH_MODEL` | `provider/id` | agent-selected & persisted (see Model selection) |
 
 ## Requirements
 
@@ -83,16 +92,18 @@ injects them at runtime.
 ## Layout
 
 ```
-index.ts            Extension entry: registers both tools + WebFetch permission gate
+index.ts            Extension entry: registers tools + WebFetch model/permission gates
 bin.ts              which/fallback binary resolution
 ddgr.ts             ddgr backend + domain-filter mapping
 websearch-tool.ts   WebSearch tool + output formatting
 preapproved.ts      Preapproved host allowlist
-webfetch-prompt.ts  WebFetch description + secondary-model prompt (copyright guardrails)
+webfetch-prompt.ts  WebFetch description + secondary-model prompt
 backends.ts         Playwright + w3m fetch backends
 webfetch-utils.ts   Validation, cache, http→https, redirect detection, HTML→markdown
 webfetch-model.ts   Small-model summarization step
 webfetch-tool.ts    WebFetch tool wiring
+model-config.ts     PI_WEBFETCH_MODEL resolve/validate/persist + agent instruction
+set-model-tool.ts   set_webfetch_model tool (agent configures the summarization model)
 ```
 
 ## Development
