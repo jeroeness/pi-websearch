@@ -148,6 +148,21 @@ export const WebSearchTool = defineTool({
     };
   },
 
+  renderCall(args, theme, context) {
+    const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+    let content = theme.fg("toolTitle", theme.bold("WebSearch"));
+    const query = typeof args?.query === "string" ? args.query : undefined;
+    if (query) {
+      content += ` ${theme.fg("dim", `"${query}"`)}`;
+    }
+    const allowed = Array.isArray(args?.allowed_domains) ? args.allowed_domains.length : 0;
+    const blocked = Array.isArray(args?.blocked_domains) ? args.blocked_domains.length : 0;
+    if (allowed > 0) content += ` ${theme.fg("muted", `(${allowed} domain${allowed === 1 ? "" : "s"} allowed)`)}`;
+    if (blocked > 0) content += ` ${theme.fg("muted", `(${blocked} domain${blocked === 1 ? "" : "s"} blocked)`)}`;
+    text.setText(content);
+    return text;
+  },
+
   renderResult(result, _options, theme) {
     const details = result.details as WebSearchDetails | undefined;
     if (!details) return new Text("", 0, 0);
