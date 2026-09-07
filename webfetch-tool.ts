@@ -140,6 +140,8 @@ export const WebFetchTool = defineTool({
 		try {
 			response = await getURLMarkdownContent(url, signal);
 		} catch (e) {
+			// A cancelled fetch is not a fetch failure — let the harness handle it.
+			if (signal?.aborted) throw e;
 			// Surface a descriptive, actionable error instead of re-throwing a bare
 			// browser message (which would render as "undefined · NaN KB" in the TUI).
 			const msg = stripCallLog(e instanceof Error ? e.message : String(e));

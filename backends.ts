@@ -90,14 +90,16 @@ function loadChromium(): Promise<any> {
 
 export class PlaywrightBackend implements FetchBackend {
 	async fetch(url: string, signal?: AbortSignal): Promise<PageContent> {
+		// Already cancelled: don't launch a browser at all (mirrors W3mBackend).
+		if (signal?.aborted) throw new Error("aborted");
 		const chromium = await loadChromium();
 		const browser = await chromium.launch({ headless: true });
+		const onAbort = () => {
+			browser.close().catch(() => {});
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
 		try {
 			const page = await browser.newPage({ userAgent: "Mozilla/5.0 (compatible; pi-agent WebFetch)" });
-			const onAbort = () => {
-				browser.close().catch(() => {});
-			};
-			signal?.addEventListener("abort", onAbort, { once: true });
 
 			const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: PLAYWRIGHT_TIMEOUT_MS });
 			// Some sites (e.g. LinkedIn) keep client-side navigating after
@@ -112,7 +114,6 @@ export class PlaywrightBackend implements FetchBackend {
 			const statusCode = response?.status() ?? 200;
 			const contentType = response?.headers()["content-type"] ?? "text/html";
 
-			signal?.removeEventListener("abort", onAbort);
 			return {
 				kind: "html",
 				content: html,
@@ -122,6 +123,7 @@ export class PlaywrightBackend implements FetchBackend {
 				finalUrl,
 			};
 		} finally {
+			signal?.removeEventListener("abort", onAbort);
 			await browser.close().catch(() => {});
 		}
 	}
