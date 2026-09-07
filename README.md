@@ -49,8 +49,24 @@ string. Cross-host redirects are surfaced (not silently followed) as a
 15-minute LRU cache speeds up repeat fetches.
 
 **Permission:** preapproved docs/code domains (see `preapproved.ts`) auto-allow and are
-eligible for a raw-markdown passthrough fast path; any other hostname is asked once per
-session before the first fetch.
+eligible for a raw-markdown passthrough fast path; any other hostname is governed by
+the host allow policy (below), which by default asks once per session.
+
+**Host allow policy.** For non-preapproved hosts, `webfetchAllow` in
+`~/.pi/agent/pi-websearch.json` (or the `PI_WEBFETCH_ALLOW` env var, which takes
+precedence) selects:
+
+| Value | Behavior |
+|---|---|
+| `"ask"` (default) | Confirm dialog with **Yes** (this session), **Always** (persist `webfetchAllow: "always"`), or **No** (block) |
+| `"always"` | Never prompt — fetch any host |
+| `"never"` | Block non-preapproved hosts outright |
+
+Example config:
+
+```json
+{ "model": "amazon-bedrock/anthropic.claude-haiku-4-5", "webfetchAllow": "always" }
+```
 
 ### `set_webfetch_model`
 Sets the model WebFetch uses for its summarization step (`PI_WEBFETCH_MODEL`) and persists
@@ -68,6 +84,7 @@ machine. Setting `PI_WEBFETCH_MODEL` explicitly skips the prompt.
 | Variable | Values | Default |
 |---|---|---|
 | `PI_WEBFETCH_BACKEND` | `playwright` \| `w3m` | `playwright` |
+| `PI_WEBFETCH_ALLOW` | `ask` \| `always` \| `never` | `ask` |
 | `PI_WEBFETCH_MODEL` | `provider/id` | agent-selected & persisted (see Model selection) |
 
 ## Requirements
@@ -93,6 +110,7 @@ injects them at runtime.
 
 ```
 index.ts            Extension entry: registers tools + WebFetch model/permission gates
+allow-config.ts     webfetchAllow policy: resolve/persist (env > file > ask)
 bin.ts              which/fallback binary resolution
 ddgr.ts             ddgr backend + domain-filter mapping
 websearch-tool.ts   WebSearch tool + output formatting

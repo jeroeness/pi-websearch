@@ -29,21 +29,33 @@ export function getConfiguredSpec(): string | undefined {
 	return value ? value : undefined;
 }
 
+/** Read the shared config file as an object ({} if missing/corrupt). */
+function readConfig(): Record<string, unknown> {
+	try {
+		const data = JSON.parse(readFileSync(persistPath(), "utf8")) as unknown;
+		if (data && typeof data === "object" && !Array.isArray(data)) {
+			return data as Record<string, unknown>;
+		}
+	} catch {
+		// Missing or corrupt — start fresh.
+	}
+	return {};
+}
+
 /** Read the persisted model spec from the global config file. */
 export function loadPersistedSpec(): string | undefined {
-	try {
-		const data = JSON.parse(readFileSync(persistPath(), "utf8")) as { model?: unknown };
-		return typeof data.model === "string" && data.model.trim() ? data.model.trim() : undefined;
-	} catch {
-		return undefined;
-	}
+	const value = readConfig().model;
+	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 /** Persist the model spec to the global config file for future sessions. */
 export function savePersistedSpec(spec: string): void {
 	const path = persistPath();
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify({ model: spec }, null, 2)}\n`);
+	// Merge, preserving other keys (e.g. webfetchAllow).
+	const config = readConfig();
+	config.model = spec;
+	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 /** Set `PI_WEBFETCH_MODEL` for this session and persist it for future ones. */

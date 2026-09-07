@@ -15,15 +15,24 @@
  *      call is blocked with the list of available models and an instruction for
  *      the agent to pick the lightest-class one and call set_webfetch_model. The
  *      choice is persisted globally (~/.pi/agent/pi-websearch.json) for reuse.
- *   2. Per-hostname permission: preapproved docs/code domains auto-allow;
- *      anything else asks once per session.
+ *   2. Per-hostname permission: preapproved docs/code domains auto-allow; any
+ *      other host follows the allow policy (see below), which by default asks
+ *      once per session.
+ *
+ * Host allow policy (non-preapproved hosts) — set "webfetchAllow" in
+ *   ~/.pi/agent/pi-websearch.json or the PI_WEBFETCH_ALLOW env var:
+ *   - "ask"    (default): Yes / Always / No dialog; "Always" persists the choice.
+ *   - "always" : never prompt, fetch freely.
+ *   - "never"  : block non-preapproved hosts.
  *
  * Environment:
  *   PI_WEBFETCH_BACKEND = playwright | w3m   (default: playwright)
+ *   PI_WEBFETCH_ALLOW   = ask | always | never (default: ask)
  *   PI_WEBFETCH_MODEL   = provider/id        (agent picks the lightest if unset)
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { resolvePolicy, savePersistedPolicy } from "./allow-config.ts";
 import {
   buildSelectionInstruction,
   getConfiguredSpec,
@@ -82,13 +91,44 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (allowedHosts.has(host)) return;
+
+    // 2. Host allow policy for non-preapproved hosts.
+    const policy = resolvePolicy();
+    if (policy === "always") {
+      allowedHosts.add(host);
+      return;
+    }
+    if (policy === "never") {
+      return {
+        block: true,
+        reason: `WebFetch is not allowed for ${host} (policy: never). Set webfetchAllow="ask" in ~/.pi/agent/pi-websearch.json to be asked per host.`,
+      };
+    }
+
     if (!ctx.hasUI) return; // headless: nobody to ask, allow through
 
-    const ok = await ctx.ui.confirm(
+    // "ask": Yes for this session, Always persists the policy, No blocks.
+    const choice = await ctx.ui.select(
       "Allow WebFetch?",
-      `Fetch content from ${host}?`,
+      [
+        `Yes — allow ${host} for this session`,
+        `Always — never ask again (persist)`,
+        `No — block ${host}`,
+      ],
     );
-    if (!ok) return { block: true, reason: `WebFetch denied for ${host}` };
-    allowedHosts.add(host);
+    if (choice === undefined) {
+      // Dialog dismissed — treat as No.
+      return { block: true, reason: `WebFetch denied for ${host}` };
+    }
+    if (choice.startsWith("Always")) {
+      savePersistedPolicy("always");
+      ctx.ui.notify("WebFetch now allows all hosts (webfetchAllow=always)", "info");
+      return;
+    }
+    if (choice.startsWith("Yes")) {
+      allowedHosts.add(host);
+      return;
+    }
+    return { block: true, reason: `WebFetch denied for ${host}` };
   });
 }
