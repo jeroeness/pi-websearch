@@ -110,6 +110,7 @@ injects them at runtime.
 
 ```
 index.ts            Extension entry: registers tools + WebFetch model/permission gates
+config-file.ts      Shared ~/.pi/agent/pi-websearch.json read/merge-write
 allow-config.ts     webfetchAllow policy: resolve/persist (env > file > ask)
 bin.ts              which/fallback binary resolution
 ddgr.ts             ddgr backend + domain-filter mapping

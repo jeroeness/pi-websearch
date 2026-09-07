@@ -8,38 +8,18 @@
  * and building the instruction the agent sees when it must pick one.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { readConfig, updateConfig } from "./config-file.ts";
 
 type ModelRegistry = ExtensionContext["modelRegistry"];
 
 const ENV_VAR = "PI_WEBFETCH_MODEL";
 
-function persistPath(): string {
-	// Global (account-scoped) — model availability follows the machine/account,
-	// not the project. e.g. ~/.pi/agent/pi-websearch.json
-	return join(getAgentDir(), "pi-websearch.json");
-}
-
 /** The model spec configured for this session (`provider/id`), if any. */
 export function getConfiguredSpec(): string | undefined {
 	const value = process.env[ENV_VAR]?.trim();
 	return value ? value : undefined;
-}
-
-/** Read the shared config file as an object ({} if missing/corrupt). */
-function readConfig(): Record<string, unknown> {
-	try {
-		const data = JSON.parse(readFileSync(persistPath(), "utf8")) as unknown;
-		if (data && typeof data === "object" && !Array.isArray(data)) {
-			return data as Record<string, unknown>;
-		}
-	} catch {
-		// Missing or corrupt — start fresh.
-	}
-	return {};
 }
 
 /** Read the persisted model spec from the global config file. */
@@ -48,14 +28,13 @@ export function loadPersistedSpec(): string | undefined {
 	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-/** Persist the model spec to the global config file for future sessions. */
+/**
+ * Persist the model spec to the global config file for future sessions.
+ * Model availability follows the machine/account, not the project, so this is
+ * account-scoped.
+ */
 export function savePersistedSpec(spec: string): void {
-	const path = persistPath();
-	mkdirSync(dirname(path), { recursive: true });
-	// Merge, preserving other keys (e.g. webfetchAllow).
-	const config = readConfig();
-	config.model = spec;
-	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+	updateConfig("model", spec);
 }
 
 /** Set `PI_WEBFETCH_MODEL` for this session and persist it for future ones. */

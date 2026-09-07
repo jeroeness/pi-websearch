@@ -12,64 +12,34 @@
  *   2. Persisted `webfetchAllow` in ~/.pi/agent/pi-websearch.json
  *   3. "ask"
  *
- * The persisted file is shared with the WebFetch model config (which stores
- * `model`), so all reads/writes merge the JSON object instead of overwriting.
+ * An in-session choice ("Always" in the confirm dialog) outranks both — see
+ * `index.ts`, which holds that session state next to the approved-host set.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { readConfig, updateConfig } from "./config-file.ts";
 
 export type WebFetchAllowPolicy = "ask" | "always" | "never";
 
 const ENV_VAR = "PI_WEBFETCH_ALLOW";
 const VALID: readonly WebFetchAllowPolicy[] = ["ask", "always", "never"];
 
-function configPath(): string {
-	// Global (account-scoped) — same file as the WebFetch model config.
-	return join(getAgentDir(), "pi-websearch.json");
-}
-
-/** Read the shared config file as an object ({} if missing/corrupt). */
-function readConfig(): Record<string, unknown> {
-	try {
-		const data = JSON.parse(readFileSync(configPath(), "utf8")) as unknown;
-		if (data && typeof data === "object" && !Array.isArray(data)) {
-			return data as Record<string, unknown>;
-		}
-	} catch {
-		// Missing or corrupt — start fresh.
-	}
-	return {};
-}
-
-/** Write the shared config file, preserving existing keys. */
-function writeConfig(config: Record<string, unknown>): void {
-	const path = configPath();
-	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
-}
-
-/** The persisted policy, if set to a valid value. */
-export function loadPersistedPolicy(): WebFetchAllowPolicy | undefined {
-	const value = readConfig().webfetchAllow;
-	return VALID.includes(value as WebFetchAllowPolicy)
+function asPolicy(value: unknown): WebFetchAllowPolicy | undefined {
+	return typeof value === "string" && VALID.includes(value as WebFetchAllowPolicy)
 		? (value as WebFetchAllowPolicy)
 		: undefined;
 }
 
+/** The persisted policy, if set to a valid value. */
+export function loadPersistedPolicy(): WebFetchAllowPolicy | undefined {
+	return asPolicy(readConfig().webfetchAllow);
+}
+
 /** Persist the policy, merging with existing config keys. */
 export function savePersistedPolicy(policy: WebFetchAllowPolicy): void {
-	const config = readConfig();
-	config.webfetchAllow = policy;
-	writeConfig(config);
+	updateConfig("webfetchAllow", policy);
 }
 
 /** Effective policy: env var > persisted > "ask". */
 export function resolvePolicy(): WebFetchAllowPolicy {
-	const env = process.env[ENV_VAR]?.trim().toLowerCase() as
-		| WebFetchAllowPolicy
-		| undefined;
-	if (env && VALID.includes(env)) return env;
-	return loadPersistedPolicy() ?? "ask";
+	return asPolicy(process.env[ENV_VAR]?.trim().toLowerCase()) ?? loadPersistedPolicy() ?? "ask";
 }
