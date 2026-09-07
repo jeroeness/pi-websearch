@@ -32,7 +32,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolvePolicy, savePersistedPolicy } from "./allow-config.ts";
+import { resolvePolicy, savePersistedPolicy, type WebFetchAllowPolicy } from "./allow-config.ts";
 import {
   buildSelectionInstruction,
   getConfiguredSpec,
@@ -52,8 +52,12 @@ export default function (pi: ExtensionAPI) {
 
   // Hostnames the user approved for WebFetch during this session.
   const allowedHosts = new Set<string>();
+  // Policy chosen in-session ("Always" in the dialog). Outranks env + file so
+  // the choice takes effect even when PI_WEBFETCH_ALLOW=ask is set.
+  let sessionPolicy: WebFetchAllowPolicy | undefined;
   pi.on("session_start", () => {
     allowedHosts.clear();
+    sessionPolicy = undefined;
     // Seed PI_WEBFETCH_MODEL from the persisted global choice, if any.
     hydrateFromPersisted();
   });
@@ -93,7 +97,7 @@ export default function (pi: ExtensionAPI) {
     if (allowedHosts.has(host)) return;
 
     // 2. Host allow policy for non-preapproved hosts.
-    const policy = resolvePolicy();
+    const policy = sessionPolicy ?? resolvePolicy();
     if (policy === "always") {
       allowedHosts.add(host);
       return;
@@ -108,27 +112,32 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI) return; // headless: nobody to ask, allow through
 
     // "ask": Yes for this session, Always persists the policy, No blocks.
-    const choice = await ctx.ui.select(
-      "Allow WebFetch?",
-      [
-        `Yes — allow ${host} for this session`,
-        `Always — never ask again (persist)`,
-        `No — block ${host}`,
-      ],
-    );
-    if (choice === undefined) {
-      // Dialog dismissed — treat as No.
-      return { block: true, reason: `WebFetch denied for ${host}` };
-    }
-    if (choice.startsWith("Always")) {
-      savePersistedPolicy("always");
-      ctx.ui.notify("WebFetch now allows all hosts (webfetchAllow=always)", "info");
-      return;
-    }
-    if (choice.startsWith("Yes")) {
+    const yes = `Yes — allow ${host} for this session`;
+    const always = "Always — never ask again (persist)";
+    const choice = await ctx.ui.select("Allow WebFetch?", [
+      yes,
+      always,
+      `No — block ${host}`,
+    ]);
+    if (choice === yes) {
       allowedHosts.add(host);
       return;
     }
+    if (choice === always) {
+      sessionPolicy = "always";
+      try {
+        savePersistedPolicy("always");
+        ctx.ui.notify("WebFetch now allows all hosts (webfetchAllow=always)", "info");
+      } catch (e) {
+        // Non-fatal: this session still allows every host.
+        ctx.ui.notify(
+          `WebFetch allows all hosts for this session; could not persist the choice: ${(e as Error).message}`,
+          "warning",
+        );
+      }
+      return;
+    }
+    // "No", or the dialog was dismissed.
     return { block: true, reason: `WebFetch denied for ${host}` };
   });
 }
