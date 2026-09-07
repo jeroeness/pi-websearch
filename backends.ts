@@ -34,6 +34,10 @@ export interface FetchBackend {
 
 const PLAYWRIGHT_TIMEOUT_MS = 60_000;
 const W3M_TIMEOUT_MS = 30_000;
+/** Max wait for a page to settle (stop navigating) before re-capturing content. */
+const NAV_SETTLE_MS = 3_000;
+/** Retries for the "page is navigating" capture error. */
+const NAV_RETRIES = 3;
 
 // biome-ignore lint/suspicious/noExplicitAny: Playwright is resolved dynamically at runtime.
 let chromiumPromise: Promise<any> | undefined;
@@ -74,7 +78,12 @@ function loadChromium(): Promise<any> {
 			const pw = require(entry);
 			if (!pw?.chromium) throw new Error("Resolved playwright but its chromium export is missing.");
 			return pw.chromium;
-		})();
+		})().catch((err) => {
+			// Don't cache a failed resolution — a later attempt may succeed once
+			// the CLI is installed or PATH changes.
+			chromiumPromise = undefined;
+			throw err;
+		});
 	}
 	return chromiumPromise;
 }
@@ -91,7 +100,14 @@ export class PlaywrightBackend implements FetchBackend {
 			signal?.addEventListener("abort", onAbort, { once: true });
 
 			const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: PLAYWRIGHT_TIMEOUT_MS });
-			const html = await page.content();
+			// Some sites (e.g. LinkedIn) keep client-side navigating after
+			// domcontentloaded, so page.content() can throw "page is navigating and
+			// changing the content". Wait for the navigation to settle and retry.
+			const html: string = await withNavigationRetry(
+				() => page.content(),
+				() => waitNavigationSettled(page, NAV_SETTLE_MS),
+				NAV_RETRIES,
+			);
 			const finalUrl = page.url();
 			const statusCode = response?.status() ?? 200;
 			const contentType = response?.headers()["content-type"] ?? "text/html";
@@ -157,6 +173,54 @@ export class W3mBackend implements FetchBackend {
 			});
 		});
 	}
+}
+
+/**
+ * Run `fetchContent`, retrying on "page is navigating" errors. Each retry waits
+ * for the navigation to settle first (via `settle`). Any other error is rethrown
+ * immediately, as is the navigation error once retries are exhausted.
+ */
+export async function withNavigationRetry<T>(
+	fetchContent: () => Promise<T>,
+	settle: () => Promise<void>,
+	retries: number,
+): Promise<T> {
+	for (let attempt = 0; attempt <= retries; attempt++) {
+		try {
+			return await fetchContent();
+		} catch (e) {
+			if (attempt === retries || !isNavigationError(e)) throw e;
+			await settle();
+		}
+	}
+	// Unreachable; keeps the type checker honest.
+	throw new Error("withNavigationRetry: unexpected state");
+}
+
+/** Playwright's error when the page is still navigating during page.content(). */
+function isNavigationError(e: unknown): boolean {
+	return typeof e === "object" && e !== null && "message" in e && /navigating/i.test(String((e as Error).message));
+}
+
+/**
+ * Wait for the page to stop navigating. Resolves early when a navigation
+ * completes; falls back to a fixed delay so a page that navigates forever
+ * cannot hang the fetch.
+ */
+function waitNavigationSettled(
+	page: { waitForNavigation: (o?: unknown) => Promise<unknown> },
+	timeoutMs: number,
+): Promise<void> {
+	return new Promise<void>((resolve) => {
+		const timer = setTimeout(() => resolve(), timeoutMs);
+		page
+			.waitForNavigation({ waitUntil: "domcontentloaded" })
+			.catch(() => {})
+			.then(() => {
+				clearTimeout(timer);
+				resolve();
+			});
+	});
 }
 
 /** Select a backend from PI_WEBFETCH_BACKEND. Default: Playwright. */
