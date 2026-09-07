@@ -41,6 +41,11 @@ Links: [{"title":"…","url":"…"}, …]
 <snippet commentary>
 ```
 
+A search that finds nothing is a normal outcome, not a tool failure: the output says so
+and tells the agent to broaden the query rather than reach for another tool. DuckDuckGo
+rate limiting (HTTP 202 with an empty result set, which `ddgr` reports as success) is
+detected separately and advises retrying the same query.
+
 ### `WebFetch`
 Fetches a URL through the selected backend, converts HTML to markdown, and applies
 your `prompt` to the content with a small, fast model. Returns the processed result

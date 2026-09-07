@@ -67,7 +67,10 @@ interface WebSearchDetails {
   query: string;
   resultCount: number;
   durationSeconds: number;
+  /** Total number of links found across the searches. */
   hits: number;
+  /** DuckDuckGo rate-limited the search (transient; hits will be 0). */
+  rateLimited: boolean;
 }
 
 /**
@@ -121,7 +124,13 @@ export const WebSearchTool = defineTool({
 
     onUpdate?.({
       content: [{ type: "text", text: `Searching: ${query}` }],
-      details: { query, resultCount: 0, durationSeconds: 0, hits: 0 },
+      details: {
+        query,
+        resultCount: 0,
+        durationSeconds: 0,
+        hits: 0,
+        rateLimited: false,
+      },
     });
 
     const effectiveQuery = applyDomainFilters(
@@ -164,7 +173,7 @@ export const WebSearchTool = defineTool({
 
     return {
       content: [{ type: "text", text }],
-      details: { query, resultCount, durationSeconds, hits },
+      details: { query, resultCount, durationSeconds, hits, rateLimited },
     };
   },
 
@@ -183,12 +192,19 @@ export const WebSearchTool = defineTool({
     return text;
   },
 
-  renderResult(result, _options, theme) {
+  renderResult(result, options, theme) {
     const details = result.details as WebSearchDetails | undefined;
     if (!details) return new Text("", 0, 0);
+    // The query is already in the call row, so the in-progress line stays short.
+    if (options.isPartial) return new Text(theme.fg("muted", "Searching…"), 0, 0);
     const n = details.resultCount;
-    const noResults = n > 0 && details.hits === 0;
-    const label = `Did ${n} search${n === 1 ? "" : "es"} in ${details.durationSeconds.toFixed(1)}s${noResults ? " · no results" : ""}`;
-    return new Text(theme.fg(noResults ? "warning" : "muted", label), 0, 0);
+    const empty = n > 0 && details.hits === 0;
+    const suffix = !empty
+      ? ""
+      : details.rateLimited
+        ? " · rate limited, retry"
+        : " · no results";
+    const label = `Did ${n} search${n === 1 ? "" : "es"} in ${details.durationSeconds.toFixed(1)}s${suffix}`;
+    return new Text(theme.fg(suffix ? "warning" : "muted", label), 0, 0);
   },
 });

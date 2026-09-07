@@ -205,7 +205,7 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
 		return text;
 	},
 
-	renderResult(result, _options, theme, context) {
+	renderResult(result, options, theme, context) {
 		const details = result.details as WebFetchDetails | undefined;
 		// Error results created by the harness carry no details — recover the URL
 		// from the call args so the line is informative instead of "undefined".
@@ -214,22 +214,23 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
 			(typeof context.args?.url === "string" ? (context.args.url as string) : "");
 		const host = url ? hostOf(url) : "(unknown URL)";
 
-		const errorText = (result.content?.find((c) => c.type === "text") as { text?: string } | undefined)?.text;
-
-		// Failed fetch (harness error, or our own error result marked codeText="error").
-		const isError = context.isError || (details ? details.codeText === "error" : true);
-		if (isError) {
-			const msg = errorText ?? "Fetch failed";
-			const firstLine = msg.split("\n")[0].slice(0, 300);
-			const prefix = theme.fg("error", `✗ ${host} · `);
-			const body = context.expanded ? msg : firstLine;
-			return new Text(prefix + theme.fg("error", body), 0, 0);
+		// Still fetching: the streamed details carry no status/size yet.
+		if (options.isPartial) {
+			return new Text(theme.fg("muted", `Fetching ${host}…`), 0, 0);
 		}
 
-		const kb = (details!.bytes / 1024).toFixed(1);
-		const ok = details!.code >= 200 && details!.code < 400;
-		const codeLabel = `${details!.code}${details!.codeText ? ` ${details!.codeText}` : ""}`;
-		const line = `${host} · ${codeLabel} · ${kb} KB · ${details!.durationMs}ms`;
+		// Failed fetch (harness error, or our own error result marked codeText="error").
+		if (!details || context.isError || details.codeText === "error") {
+			const errorText = (result.content?.find((c) => c.type === "text") as { text?: string } | undefined)?.text;
+			const msg = errorText ?? "Fetch failed";
+			const body = context.expanded ? msg : msg.split("\n")[0].slice(0, 300);
+			return new Text(theme.fg("error", `✗ ${host} · ${body}`), 0, 0);
+		}
+
+		const kb = (details.bytes / 1024).toFixed(1);
+		const ok = details.code >= 200 && details.code < 400;
+		const codeLabel = `${details.code}${details.codeText ? ` ${details.codeText}` : ""}`;
+		const line = `${host} · ${codeLabel} · ${kb} KB · ${details.durationMs}ms`;
 		return new Text(theme.fg(ok ? "muted" : "warning", line), 0, 0);
 	},
 });
