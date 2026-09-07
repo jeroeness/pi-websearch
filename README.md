@@ -10,7 +10,7 @@ Local **WebSearch** and **WebFetch** tools for the [pi coding agent](https://www
 Install as a pi package (recommended):
 
 ```bash
-pi install github.com/jeroeness/pi-websearch
+pi install https://github.com/jeroeness/pi-websearch
 ```
 
 Or clone into an auto-discovered extensions directory:
