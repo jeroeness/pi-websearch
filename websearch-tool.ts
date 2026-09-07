@@ -67,6 +67,10 @@ interface WebSearchDetails {
   query: string;
   resultCount: number;
   durationSeconds: number;
+  /** Total number of links found across the searches. */
+  hits: number;
+  /** DuckDuckGo rate-limited the search (transient; hits will be 0). */
+  rateLimited: boolean;
 }
 
 /**
@@ -99,6 +103,7 @@ export const WebSearchTool = defineTool({
   promptSnippet: "Search the web (DuckDuckGo via ddgr) for current information",
   promptGuidelines: [
     "After using WebSearch, include a Sources: section listing the result URLs as markdown links.",
+    "A search returning 0 results is a valid outcome, not a tool error — it means the query was too specific or restrictive. Retry with a broader or rephrased query rather than switching to other tools.",
   ],
   parameters,
 
@@ -119,7 +124,13 @@ export const WebSearchTool = defineTool({
 
     onUpdate?.({
       content: [{ type: "text", text: `Searching: ${query}` }],
-      details: { query, resultCount: 0, durationSeconds: 0 },
+      details: {
+        query,
+        resultCount: 0,
+        durationSeconds: 0,
+        hits: 0,
+        rateLimited: false,
+      },
     });
 
     const effectiveQuery = applyDomainFilters(
@@ -130,29 +141,70 @@ export const WebSearchTool = defineTool({
 
     // Ordered, mixed array — identical contract to the upstream parser output.
     const results: (SearchResult | string)[] = [];
+    let searchFailed = false;
+    let rateLimited = false;
     try {
       const ddgr = await runDdgr(effectiveQuery, signal);
+      rateLimited = ddgr.rateLimited;
       results.push({ tool_use_id: `websearch-${start}`, content: ddgr.hits });
       if (ddgr.snippets.trim().length > 0) results.push(ddgr.snippets);
     } catch (e) {
+      searchFailed = true;
       // A failed search becomes an error-string entry, matching upstream.
       results.push(`Web search error: ${(e as Error).message}`);
     }
 
     const durationSeconds = (Date.now() - start) / 1000;
     const resultCount = results.filter((r) => typeof r !== "string").length;
+    const hits = results
+      .filter((r) => typeof r !== "string")
+      .reduce((n, r) => n + r.content.length, 0);
+
+    let text = formatOutput(query, results);
+    if (!searchFailed && hits === 0) {
+      if (rateLimited) {
+        text +=
+          "\n\nThis search was rate-limited by DuckDuckGo (HTTP 202) — a transient server-side condition, not a query problem and not a tool error. Retry the same WebSearch query again in a moment.";
+      } else {
+        text +=
+          "\n\nThis search ran successfully but found no pages. That is a normal outcome, not a tool error — it usually means the query is too specific or restrictive (exact-phrase quotes, rare names, domain filters). Retry WebSearch with a broader or rephrased query (e.g. drop the quotes, use just the surname, or remove filters) rather than switching to other tools.";
+      }
+    }
 
     return {
-      content: [{ type: "text", text: formatOutput(query, results) }],
-      details: { query, resultCount, durationSeconds },
+      content: [{ type: "text", text }],
+      details: { query, resultCount, durationSeconds, hits, rateLimited },
     };
   },
 
-  renderResult(result, _options, theme) {
+  renderCall(args, theme, context) {
+    const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+    let content = theme.fg("toolTitle", theme.bold("WebSearch"));
+    const query = typeof args?.query === "string" ? args.query : undefined;
+    if (query) {
+      content += ` ${theme.fg("dim", `"${query}"`)}`;
+    }
+    const allowed = Array.isArray(args?.allowed_domains) ? args.allowed_domains.length : 0;
+    const blocked = Array.isArray(args?.blocked_domains) ? args.blocked_domains.length : 0;
+    if (allowed > 0) content += ` ${theme.fg("muted", `(${allowed} domain${allowed === 1 ? "" : "s"} allowed)`)}`;
+    if (blocked > 0) content += ` ${theme.fg("muted", `(${blocked} domain${blocked === 1 ? "" : "s"} blocked)`)}`;
+    text.setText(content);
+    return text;
+  },
+
+  renderResult(result, options, theme) {
     const details = result.details as WebSearchDetails | undefined;
     if (!details) return new Text("", 0, 0);
+    // The query is already in the call row, so the in-progress line stays short.
+    if (options.isPartial) return new Text(theme.fg("muted", "Searching…"), 0, 0);
     const n = details.resultCount;
-    const label = `Did ${n} search${n === 1 ? "" : "es"} in ${details.durationSeconds.toFixed(1)}s`;
-    return new Text(theme.fg("muted", label), 0, 0);
+    const empty = n > 0 && details.hits === 0;
+    const suffix = !empty
+      ? ""
+      : details.rateLimited
+        ? " · rate limited, retry"
+        : " · no results";
+    const label = `Did ${n} search${n === 1 ? "" : "es"} in ${details.durationSeconds.toFixed(1)}s${suffix}`;
+    return new Text(theme.fg(suffix ? "warning" : "muted", label), 0, 0);
   },
 });
