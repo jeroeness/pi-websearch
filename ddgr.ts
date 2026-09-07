@@ -15,6 +15,12 @@ export type DdgrResult = {
 	hits: SearchHit[];
 	/** Concatenated abstracts, used as the model-visible snippet text for a query. */
 	snippets: string;
+	/**
+	 * DuckDuckGo rate-limited the request (HTTP 202 "Accepted" + no results).
+	 * ddgr still exits 0, so callers must check this flag: zero hits with
+	 * rateLimited=true is transient (retry after a pause), not a query problem.
+	 */
+	rateLimited: boolean;
 };
 
 // ddgr JSON element shape (as emitted by `ddgr --json`).
@@ -89,7 +95,10 @@ export function runDdgr(query: string, signal?: AbortSignal): Promise<DdgrResult
 				const snippets = raw
 					.map((h) => (h.abstract ? `- ${h.title}: ${h.abstract}` : `- ${h.title}`))
 					.join("\n");
-				resolve({ hits, snippets });
+				// DuckDuckGo rate limiting surfaces as "[ERROR] HTTP Error 202: Accepted"
+				// on stderr with an empty result set (exit code 0).
+				const rateLimited = /HTTP Error 202/i.test(stderr);
+				resolve({ hits, snippets, rateLimited });
 			} catch (e) {
 				reject(new Error(`Failed to parse ddgr JSON: ${(e as Error).message}`));
 			}
